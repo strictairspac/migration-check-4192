@@ -1,12 +1,15 @@
-from src.config.database import Base,engine,Session
+from src.config.database import Session
+from src.config.schema import ensure_schema
 from src.models.identity import User,Audit
 from src.models.batch import Batch
 from src.models.mapping import Mapping
 from src.models.run import Run,TargetRow
+from src.models.branch import BranchRegistration,IntakeBatch,IntakeItem
 from src.utils.security import hash_password
+from src.services.migration import digest,make_backup
 RULES=[{'source':a,'target':b,'type':c,'required':True} for a,b,c in [('委托号','sample_code','text'),('检测项','test_name','text'),('结果','result_value','decimal'),('单位','unit','text'),('时间','measured_at','datetime')]]
 def seed():
- Base.metadata.create_all(engine)
+ ensure_schema()
  with Session() as s:
   for role in ('admin','operator','viewer'):
    if not s.query(User).filter_by(email=role+'@migration.local').first():s.add(User(email=role+'@migration.local',role=role,password=hash_password('Migrate2026!')))
@@ -19,5 +22,13 @@ def seed():
   for i,(name,_,_,_) in enumerate(seeds):
    mname=['检验结果标准映射','异常隔离复核映射','空批次映射'][i]
    if not s.query(Mapping).filter_by(name=mname).first():s.add(Mapping(name=mname,batch_id=s.query(Batch).filter_by(name=name).one().id,rules=RULES,chunk_size=4,note='sample_code + test_name 为自然键'))
-  s.commit();counts={m.__tablename__:s.query(m).count() for m in (User,Batch,Mapping,Run,TargetRow)};print(counts);return counts
+  def artifact(branch,run_id,count):
+   rows=[{'sample_code':f'{branch}-{run_id}-{i:03d}','test_name':'拉伸强度','result_value':f'{420+i/10:.6f}','unit':'MPa','measured_at':'2026-11-17T01:00:00+00:00'} for i in range(1,count+1)]
+   result={'accepted_rows':rows,'row_hashes':[digest(r) for r in rows],'checksum':digest(rows)}
+   return {**make_backup(result,run_id,f'{branch}检验结果'),'branch_code':branch,'original_run_id':run_id}
+  for branch,run_id in (('东院',1001),('西院',1001),('东院',1002)):
+   if not s.query(BranchRegistration).filter_by(branch_code=branch,original_run_id=run_id).first():
+    demo=artifact(branch,run_id,3)
+    s.add(BranchRegistration(branch_code=branch,original_run_id=run_id,digest=digest(demo),reference={'source':'seed','row_count':3,'demo_artifact':demo},note='演示预登记摘要，可下载示例原件后接收'))
+  s.commit();counts={m.__tablename__:s.query(m).count() for m in (User,Batch,Mapping,Run,TargetRow,BranchRegistration,IntakeBatch,IntakeItem)};print(counts);return counts
 if __name__=='__main__':seed()

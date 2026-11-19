@@ -32,3 +32,7 @@ target/
 *.o
 *.obj
 .DS_Store
+
+# 测试运行产物（保留可执行测试脚本）
+test-artifacts/*/__pycache__/
+test-artifacts/**/*.db

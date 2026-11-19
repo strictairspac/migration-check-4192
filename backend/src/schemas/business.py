@@ -26,3 +26,18 @@ class RunInput(BaseModel):
  name:str=Field(min_length=2,max_length=120)
  mapping_id:int
 class RestoreInput(BaseModel):backup:dict
+class BranchRegistrationInput(BaseModel):
+ branch_code:str=Field(min_length=1,max_length=60)
+ original_run_id:int=Field(ge=1)
+ digest:str|None=Field(default=None,max_length=64)
+ artifact:dict|None=None
+ reference:dict|None=None
+ note:str=Field(default='',max_length=500)
+class BranchArtifactItem(BaseModel):
+ branch_code:str=Field(min_length=1,max_length=60)
+ original_run_id:int=Field(ge=1)
+ artifact:dict
+class BranchIntakeInput(BaseModel):
+ receipt:str|None=Field(default=None,max_length=120)
+ note:str=Field(default='',max_length=500)
+ items:list[BranchArtifactItem]

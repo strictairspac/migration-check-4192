@@ -5,7 +5,7 @@
 ## 场景与业务
 上游实验室交付旧字段JSON检验记录；过去人工改字段名、复制到新表并凭总行数判断成功。痛点：非法数值默默丢失、重复委托号覆盖、备份无法证明能恢复。本站登记原始行，字段映射规定类型和必填，Python逐块转换并保留拒绝原行，真实PG目标表一次提交。下游质量复核人下载对账凭据，管理员用JSON逻辑备份恢复本次运行目标并核验。
 
-四业务页：源批次、字段映射、迁移执行（可取消）、差异核对（拒绝区/目标行/备份）；管理员另有审计和回传恢复。三核心实体batches/mappings/runs，另target_rows持久化目标行。全部实体按模型/schema/service/controller/routes/前端api/store/page贯穿。
+五业务页：源批次、字段映射、迁移执行（可取消）、差异核对（拒绝区/目标行/备份）、分院接收；管理员另有审计和回传恢复。三核心实体batches/mappings/runs，另target_rows持久化目标行；分院接收由branch_registrations/intake_batches/intake_items承载。全部实体按模型/schema/service/controller/routes/前端api/store/page贯穿。
 
 ## 启动与账号
 ```sh
@@ -33,7 +33,17 @@ docker compose exec -T backend python -m scripts.seed_demo
 7. 09:30 下载reconciliation-<id>.json与backup-<id>.json，viewer复核。
 8. 10:00 admin回传该备份，恢复并核对摘要，查看审计完成事件。
 
-seed含三账号、三批次（三种正常/异常/空输入）、三映射。固定数值、自然键upsert式补缺，不覆盖用户编辑；连续执行不新增。
+seed含三账号、三批次（三种正常/异常/空输入）、三映射，以及三条分院预登记（东院#1001、西院#1001、东院#1002，带可下载示例原件）。固定数值、自然键upsert式补缺，不覆盖用户编辑；连续执行不新增。
+
+## 分院整批接收
+总院接收分院整批检验备份时，用「分院代码 + 分院原运行号」认来源：同号不同院各自入库，同院同号只入库一次。分院须先在「分院接收」页登记来源摘要（可直接粘贴64位SHA-256，或上传原件即时计算）。整批提交时逐份：
+
+1. 按分院预登记摘要核对原件——原件须为version1逻辑JSON备份，运行号、checksum、逐行摘要、目标schema和自然键都要对得上。
+2. 通过后建立本地运行（origin=branch）与target_rows，页面显示本地运行号、原运行号与拒收原因。
+3. 任一原件验不过，整批回滚：本批不新增任何本地运行，拒收项和原因逐条留档；已存在的本地运行保持原样。
+4. 回执按内容指纹去重。回执丢失、重复提交或并发重试都返回原有本地编号，不新增运行；相同回执配不同内容报冲突。
+
+原件按原样留存，可随时「核对原件」：以预登记摘要复核原件内容，并与本地目标行的checksum对照。分院运行同样可下载逻辑备份、由管理员回传恢复。接口：`POST /branches/registrations`、`POST /branches/intakes`、`GET /branches/intakes/{id}/verify`。
 
 ## 迁移、校验、取消与恢复
 字段类型为text/decimal/datetime。decimal使用Decimal精确转换为6位小数字符串，范围±1e9；无穷/NaN拒绝。空值/空串按required隔离（只有unit可非必填）；缺源字段隔离。时间统一UTC，无时区按Asia/Shanghai(+08:00)解释。自然键sample_code+test_name按规范JSON SHA-256计算；同次运行重复键只接受首条合法记录。每行与全部接受行用排序key/紧凑JSON/UTF-8算SHA-256。拒绝行保存原行和原因。
@@ -49,4 +59,4 @@ Python3.11/FastAPI/SQLAlchemy/psycopg/Redis/PostgreSQL16，原生HTML/CSS/JS，n
 
 backend/src按models/schemas/services/controllers/routes/middlewares/config/constants/utils；backend/scripts/seed_demo.py；backend/migrations记录元数据版本。frontend/src按api/stores/pages/components/common/hooks/router/types/constants/utils；共享table/status/feedback；forms/poll hooks。角色/状态/类型枚举在backend/src/constants/enums.py与frontend/src/constants/enums.js。墨绿邮政凭单视觉，Noto Sans SC/Space Mono双字体来自Google Fonts，离线回退；桌面/平板/手机响应。
 
-.env.example定义COMPOSE_PROJECT_NAME/三端口/JWT_SECRET/SEED_DEMO；DATABASE_URL/REDIS_URL由Compose注入。启动SEED_DEMO失败只记日志。本地开发pip install -r backend/requirements.txt，设数据库/Redis/JWT环境变量，在backend运行uvicorn src.main:app --reload；前端需/api代理，不能file://。测试/截图/日志放批次test-artifacts/gb-4109，源码不混入。MIT License。
+.env.example定义COMPOSE_PROJECT_NAME/三端口/JWT_SECRET/SEED_DEMO；DATABASE_URL/REDIS_URL由Compose注入。启动SEED_DEMO失败只记日志。本地开发pip install -r backend/requirements.txt，设数据库/Redis/JWT环境变量，在backend运行uvicorn src.main:app --reload；前端需/api代理，不能file://。测试/截图/日志放批次test-artifacts/gb-4109，源码不混入；分院接收回归测试：`DATABASE_URL=sqlite:////tmp/bt.db JWT_SECRET=test PYTHONPATH=backend python3 test-artifacts/gb-4109/test_branch_intake.py`（15项，不依赖Docker/Redis）。MIT License。
